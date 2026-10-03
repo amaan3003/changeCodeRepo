@@ -1,0 +1,4 @@
+# Python change detector outputs
+.changes/
+__pycache__/
+*.pyc

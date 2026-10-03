@@ -1,0 +1,50 @@
+name: Detect repository changes
+
+on:
+  push:
+    branches: ['**']
+  workflow_dispatch:
+    inputs:
+      before_sha:
+        description: 'Optional commit SHA to compare against (empty = latest commit parent)'
+        required: false
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  detect:
+    if: github.event.deleted != true
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.12'
+      - name: Fetch the previous commit if it is no longer on a branch
+        env:
+          BEFORE_SHA: ${{ github.event.before || inputs.before_sha }}
+        shell: bash
+        run: |
+          if [[ "$BEFORE_SHA" =~ ^[0-9a-fA-F]{40}$ ]] && [[ "$BEFORE_SHA" != "0000000000000000000000000000000000000000" ]]; then
+            if ! git cat-file -e "${BEFORE_SHA}^{commit}" 2>/dev/null; then
+              git fetch --no-tags origin "$BEFORE_SHA"
+            fi
+          fi
+      - name: Check the detector
+        run: python tests/test_change_detector.py
+      - name: Capture changes for the documentation team
+        env:
+          BEFORE_SHA: ${{ inputs.before_sha }}
+        run: python main.py
+      - name: Save the JSON handoff
+        uses: actions/upload-artifact@v4
+        with:
+          name: repo-changes-${{ github.run_id }}-${{ github.run_attempt }}
+          path: .changes/changes.json
+          include-hidden-files: true
+          if-no-files-found: error
+          retention-days: 7
